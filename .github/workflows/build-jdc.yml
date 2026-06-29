@@ -29,7 +29,6 @@ jobs:
       - name: 复制配置和自定义文件
         run: |
           cp jdc/configs/jdcloud_re_cs02.config lede/.config
-          cp -r jdc/files lede/files 2>/dev/null || true
           cp jdc/scripts/diy.sh lede/diy.sh 2>/dev/null || true
 
       - name: 更新并安装 feeds
