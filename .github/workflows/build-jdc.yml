@@ -24,25 +24,17 @@ jobs:
       - name: 克隆 Lean Lede 源码
         run: git clone --depth=1 https://github.com/coolsnowwolf/lede.git lede
 
-      - name: 复制自定义.config配置文件
-        run: |
-          cp jdc/configs/jdcloud_re_cs02.config lede/.config
-          cp jdc/scripts/diy.sh lede/diy.sh 2>/dev/null || true
-
       - name: 更新并安装全部 feeds 软件源
         run: |
           cd lede
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: 删除lean全套插件、passwall、libselinux，【保留完整LuCI feeds目录】
+      - name: 删除lean全套插件、passwall、libselinux，保留完整LuCI feeds目录
         run: |
           cd lede
-          # 删除全套lean第三方插件
           rm -rf package/lean
-          # 删除报错的selinux源码包
           rm -rf package/libs/libselinux
-          # 仅删除passwall，不删除整个luci文件夹（关键修复！）
           rm -rf package/feeds/luci/luci-app-passwall
           ./scripts/feeds clean
 
@@ -51,29 +43,27 @@ jobs:
           cd lede
           [ -f diy.sh ] && chmod +x diy.sh && bash diy.sh || true
 
-      - name: 清理旧编译缓存，避免残留编译错误
+      # 关键改动1：先执行平台defconfig（原生默认配置）
+      - name: 先生成平台默认配置
         run: |
           cd lede
-          rm -rf build_dir staging_dir
+          make -j1 target/linux/qualcommax/ipq60xx/defconfig
 
-      - name: 加载IPQ60xx平台底层配置，输出完整日志
+      # 关键改动2：再覆盖我们写好的完整config（强制锁定LuCI开启，不会被覆盖）
+      - name: 覆盖自定义完整配置（LuCI强制开启）
         run: |
-          cd lede
-          set +e
-          make -j1 target/linux/qualcommax/ipq60xx/defconfig 2>&1 | tee config-stage.log
-          ret=$?
-          cat config-stage.log >> build-full.log
-          if [ $ret -ne 0 ]; then
-            echo "【错误】平台defconfig执行失败，日志如下"
-            cat config-stage.log
-            exit $ret
-          fi
-          set -e
+          cp jdc/configs/jdcloud_re_cs02.config lede/.config
+          cp jdc/scripts/diy.sh lede/diy.sh 2>/dev/null || true
 
       - name: 同步配置依赖 oldconfig
         run: |
           cd lede
           make oldconfig 2>&1 | tee -a build-full.log
+
+      - name: 清理旧编译缓存，避免残留编译错误
+        run: |
+          cd lede
+          rm -rf build_dir staging_dir
 
       - name: 预下载全部软件包源码
         run: |
