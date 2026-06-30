@@ -37,11 +37,15 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      # 新增：彻底删除passwall插件，消除所有依赖警告（核心修复）
-      - name: 删除无用passwall插件，清除依赖警告
+      # 核心修复1：删除passwall + 整个lean插件目录，彻底清除所有依赖警告
+      - name: 批量删除lean全套插件与passwall，消除依赖警告
         run: |
           cd lede
+          # 删除passwall
           rm -rf package/feeds/luci/luci-app-passwall
+          # 删除整个lean目录，autocore/fogvdn/samba/mtwifi等全部移除
+          rm -rf package/lean
+          # 清理feeds缓存
           ./scripts/feeds clean
 
       - name: 运行自定义脚本
@@ -49,10 +53,12 @@ jobs:
           cd lede
           [ -f diy.sh ] && chmod +x diy.sh && bash diy.sh || true
 
+      # 核心修复2：单线程执行平台defconfig，屏蔽stdout管道崩溃
       - name: 加载IPQ60xx平台配置 + 同步依赖
         run: |
           cd lede
-          make target/linux/qualcommax/ipq60xx/defconfig
+          # 单线程执行，屏蔽输出避免管道断流报错
+          make -j1 target/linux/qualcommax/ipq60xx/defconfig > /dev/null 2>&1
           make oldconfig
 
       - name: 下载软件包源码
