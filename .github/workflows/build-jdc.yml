@@ -37,15 +37,11 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      # 核心修复1：删除passwall + 整个lean插件目录，彻底清除所有依赖警告
       - name: 批量删除lean全套插件与passwall，消除依赖警告
         run: |
           cd lede
-          # 删除passwall
           rm -rf package/feeds/luci/luci-app-passwall
-          # 删除整个lean目录，autocore/fogvdn/samba/mtwifi等全部移除
           rm -rf package/lean
-          # 清理feeds缓存
           ./scripts/feeds clean
 
       - name: 运行自定义脚本
@@ -53,13 +49,24 @@ jobs:
           cd lede
           [ -f diy.sh ] && chmod +x diy.sh && bash diy.sh || true
 
-      # 核心修复2：单线程执行平台defconfig，屏蔽stdout管道崩溃
-      - name: 加载IPQ60xx平台配置 + 同步依赖
+      # 改动重点：保留配置阶段输出，捕获真实错误
+      - name: 加载IPQ60xx平台配置（打印完整日志）
         run: |
           cd lede
-          # 单线程执行，屏蔽输出避免管道断流报错
-          make -j1 target/linux/qualcommax/ipq60xx/defconfig > /dev/null 2>&1
-          make oldconfig
+          set +e
+          make -j1 target/linux/qualcommax/ipq60xx/defconfig 2>&1 | tee config-stage.log
+          ret=$?
+          cat config-stage.log >> build-full.log
+          if [ $ret -ne 0 ]; then
+            echo "===== 平台defconfig执行失败，完整日志如下 ====="
+            cat config-stage.log
+            exit $ret
+          fi
+          set -e
+      - name: 同步依赖 oldconfig
+        run: |
+          cd lede
+          make oldconfig 2>&1 | tee -a build-full.log
 
       - name: 下载软件包源码
         run: |
@@ -75,7 +82,7 @@ jobs:
       - name: 打包编译日志压缩包
         run: |
           cd lede
-          zip -r build-logs.zip build-full.log .config dl/ logs/ || true
+          zip -r build-logs.zip build-full.log .config dl/ logs/ config-stage.log || true
 
       - name: 上传固件与日志产物
         uses: actions/upload-artifact@v4
