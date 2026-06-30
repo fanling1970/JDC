@@ -21,7 +21,7 @@ jobs:
             unzip python3 python3-distutils python3-setuptools cmake \
             libssl-dev curl file gawk gettext libelf-dev flex bison \
             libjson-c-dev libusb-1.0-0-dev uuid-dev pkg-config \
-            autoconf automake m4 libtool bc time rsync
+            autoconf automake m4 libtool bc time rsync zip
 
       - name: 克隆 lede 源码
         run: git clone --depth=1 https://github.com/coolsnowwolf/lede.git lede
@@ -42,10 +42,11 @@ jobs:
           cd lede
           [ -f diy.sh ] && chmod +x diy.sh && bash diy.sh || true
 
-      - name: 生成最终配置
+      - name: 加载IPQ60xx平台配置 + 同步依赖（替换原make defconfig）
         run: |
           cd lede
-          make defconfig
+          make target/linux/qualcommax/ipq60xx/defconfig
+          make oldconfig
 
       - name: 下载软件包源码
         run: |
@@ -53,12 +54,18 @@ jobs:
           make download -j$(nproc)
           find dl -size -1024c -exec rm -f {} \;
 
-      - name: 编译固件
+      - name: 编译固件（输出完整build日志保存）
         run: |
           cd lede
-          make -j$(nproc) V=s || make -j1 V=s
+          # 将完整编译输出持久化保存到日志文件
+          make -j$(nproc) V=s 2>&1 | tee build-full.log || make -j1 V=s 2>&1 | tee -a build-full.log
 
-      - name: 上传固件产物
+      - name: 打包编译日志压缩包
+        run: |
+          cd lede
+          zip -r build-logs.zip build-full.log .config dl/ logs/ || true
+
+      - name: 上传固件与日志产物
         uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -68,3 +75,4 @@ jobs:
             lede/bin/targets/qualcommax/ipq60xx/*.manifest
             lede/bin/targets/qualcommax/ipq60xx/*.ubi
             lede/bin/targets/qualcommax/ipq60xx/*.itb
+            lede/build-logs.zip
