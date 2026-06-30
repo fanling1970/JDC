@@ -35,13 +35,15 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: 删除lean全套插件、passwall、libselinux源码目录（根治pcre2报错）
+      - name: 删除lean全套插件、passwall、libselinux，【保留完整LuCI feeds目录】
         run: |
           cd lede
+          # 删除全套lean第三方插件
           rm -rf package/lean
-          rm -rf package/feeds/luci/luci-app-passwall
-          # 物理删除libselinux源码，彻底杜绝编译该包
+          # 删除报错的selinux源码包
           rm -rf package/libs/libselinux
+          # 仅删除passwall，不删除整个luci文件夹（关键修复！）
+          rm -rf package/feeds/luci/luci-app-passwall
           ./scripts/feeds clean
 
       - name: 执行自定义diy脚本
