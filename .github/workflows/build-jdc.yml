@@ -1,19 +1,17 @@
 name: 编译京东云雅典娜 RE-CS-02 最小系统固件
-
 on:
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-22.04
-
     steps:
-      - name: 检出当前仓库
+      - name: 检出当前仓库配置文件
         uses: actions/checkout@v4
         with:
           path: jdc
 
-      - name: 安装编译依赖
+      - name: 安装编译系统依赖
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -23,34 +21,38 @@ jobs:
             libjson-c-dev libusb-1.0-0-dev uuid-dev pkg-config \
             autoconf automake m4 libtool bc time rsync zip
 
-      - name: 克隆 lede 源码
+      - name: 克隆 Lean Lede 源码
         run: git clone --depth=1 https://github.com/coolsnowwolf/lede.git lede
 
-      - name: 复制配置和自定义文件
+      - name: 复制自定义.config配置文件
         run: |
           cp jdc/configs/jdcloud_re_cs02.config lede/.config
           cp jdc/scripts/diy.sh lede/diy.sh 2>/dev/null || true
 
-      - name: 更新并安装 feeds
+      - name: 更新并安装全部 feeds 软件源
         run: |
           cd lede
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: 批量删除lean全套插件与passwall，消除依赖警告
+      - name: 删除lean全套插件、passwall，消除依赖警告
         run: |
           cd lede
-          rm -rf package/feeds/luci/luci-app-passwall
           rm -rf package/lean
+          rm -rf package/feeds/luci/luci-app-passwall
           ./scripts/feeds clean
 
-      - name: 运行自定义脚本
+      - name: 执行自定义diy脚本
         run: |
           cd lede
           [ -f diy.sh ] && chmod +x diy.sh && bash diy.sh || true
 
-      # 改动重点：保留配置阶段输出，捕获真实错误
-      - name: 加载IPQ60xx平台配置（打印完整日志）
+      - name: 清理旧编译缓存，避免残留编译错误
+        run: |
+          cd lede
+          rm -rf build_dir staging_dir
+
+      - name: 加载IPQ60xx平台底层配置，输出完整日志
         run: |
           cd lede
           set +e
@@ -58,40 +60,38 @@ jobs:
           ret=$?
           cat config-stage.log >> build-full.log
           if [ $ret -ne 0 ]; then
-            echo "===== 平台defconfig执行失败，完整日志如下 ====="
+            echo "【错误】平台defconfig执行失败，日志如下"
             cat config-stage.log
             exit $ret
           fi
           set -e
-      - name: 同步依赖 oldconfig
+
+      - name: 同步配置依赖 oldconfig
         run: |
           cd lede
           make oldconfig 2>&1 | tee -a build-full.log
 
-      - name: 下载软件包源码
+      - name: 预下载全部软件包源码
         run: |
           cd lede
-          make download -j$(nproc)
+          make download -j$(nproc) 2>&1 | tee -a build-full.log
           find dl -size -1024c -exec rm -f {} \;
 
-      - name: 编译固件（输出完整build日志保存）
+      - name: 编译固件，全程输出日志保存
         run: |
           cd lede
-          make -j$(nproc) V=s 2>&1 | tee build-full.log || make -j1 V=s 2>&1 | tee -a build-full.log
+          make -j$(nproc) V=s 2>&1 | tee -a build-full.log || make -j1 V=s 2>&1 | tee -a build-full.log
 
-      - name: 打包编译日志压缩包
+      - name: 打包编译日志（剔除dl源码文件夹，缩小压缩包）
         run: |
           cd lede
-          zip -r build-logs.zip build-full.log .config dl/ logs/ config-stage.log || true
+          zip -r build-logs.zip build-full.log .config logs/ config-stage.log || true
 
-      - name: 上传固件与日志产物
+      - name: 上传固件镜像 + 完整日志包
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: jdcloud-re-cs-02-minimal
           path: |
-            lede/bin/targets/qualcommax/ipq60xx/*.bin
-            lede/bin/targets/qualcommax/ipq60xx/*.manifest
-            lede/bin/targets/qualcommax/ipq60xx/*.ubi
-            lede/bin/targets/qualcommax/ipq60xx/*.itb
+            lede/bin/targets/qualcommax/ipq60xx/
             lede/build-logs.zip
