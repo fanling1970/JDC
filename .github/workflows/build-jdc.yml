@@ -35,11 +35,13 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: 删除lean全套插件、passwall，消除依赖警告
+      - name: 删除lean全套插件、passwall、libselinux源码目录（根治pcre2报错）
         run: |
           cd lede
           rm -rf package/lean
           rm -rf package/feeds/luci/luci-app-passwall
+          # 物理删除libselinux源码，彻底杜绝编译该包
+          rm -rf package/libs/libselinux
           ./scripts/feeds clean
 
       - name: 执行自定义diy脚本
@@ -87,11 +89,21 @@ jobs:
           cd lede
           zip -r build-logs.zip build-full.log .config logs/ config-stage.log || true
 
-      - name: 上传固件镜像 + 完整日志包
+      # 分开上传：日志必传，固件仅存在文件才生成附件
+      - name: 上传完整编译日志包
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: jdcloud-re-cs-02-minimal
+          name: compile-logs
+          path: lede/build-logs.zip
+
+      - name: 上传路由器固件镜像
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jdcloud-re-cs-02-firmware
           path: |
-            lede/bin/targets/qualcommax/ipq60xx/
-            lede/build-logs.zip
+            lede/bin/targets/qualcommax/ipq60xx/*.bin
+            lede/bin/targets/qualcommax/ipq60xx/*.ubi
+            lede/bin/targets/qualcommax/ipq60xx/*.itb
+            lede/bin/targets/qualcommax/ipq60xx/*.manifest
