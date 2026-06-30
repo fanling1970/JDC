@@ -43,19 +43,13 @@ jobs:
           cd lede
           [ -f diy.sh ] && chmod +x diy.sh && bash diy.sh || true
 
-      # 关键改动1：先执行平台defconfig（原生默认配置）
-      - name: 先生成平台默认配置
-        run: |
-          cd lede
-          make -j1 target/linux/qualcommax/ipq60xx/defconfig
-
-      # 关键改动2：再覆盖我们写好的完整config（强制锁定LuCI开启，不会被覆盖）
-      - name: 覆盖自定义完整配置（LuCI强制开启）
+      # 【核心修复】直接复制完整预配置，彻底跳过交互式defconfig（消除terminal报错）
+      - name: 直接写入完整自定义.config（内置平台+LuCI全套开关）
         run: |
           cp jdc/configs/jdcloud_re_cs02.config lede/.config
           cp jdc/scripts/diy.sh lede/diy.sh 2>/dev/null || true
 
-      - name: 同步配置依赖 oldconfig
+      - name: 静默同步配置 oldconfig（无图形终端，纯后台执行）
         run: |
           cd lede
           make oldconfig 2>&1 | tee -a build-full.log
@@ -79,7 +73,7 @@ jobs:
       - name: 打包编译日志（剔除dl源码文件夹，缩小压缩包）
         run: |
           cd lede
-          zip -r build-logs.zip build-full.log .config logs/ config-stage.log || true
+          zip -r build-logs.zip build-full.log .config logs/ || true
 
       # 分开上传：日志必传，固件仅存在文件才生成附件
       - name: 上传完整编译日志包
