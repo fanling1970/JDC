@@ -37,12 +37,19 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
+      # 新增：彻底删除passwall插件，消除所有依赖警告（核心修复）
+      - name: 删除无用passwall插件，清除依赖警告
+        run: |
+          cd lede
+          rm -rf package/feeds/luci/luci-app-passwall
+          ./scripts/feeds clean
+
       - name: 运行自定义脚本
         run: |
           cd lede
           [ -f diy.sh ] && chmod +x diy.sh && bash diy.sh || true
 
-      - name: 加载IPQ60xx平台配置 + 同步依赖（替换原make defconfig）
+      - name: 加载IPQ60xx平台配置 + 同步依赖
         run: |
           cd lede
           make target/linux/qualcommax/ipq60xx/defconfig
@@ -57,7 +64,6 @@ jobs:
       - name: 编译固件（输出完整build日志保存）
         run: |
           cd lede
-          # 将完整编译输出持久化保存到日志文件
           make -j$(nproc) V=s 2>&1 | tee build-full.log || make -j1 V=s 2>&1 | tee -a build-full.log
 
       - name: 打包编译日志压缩包
