@@ -24,18 +24,24 @@ jobs:
       - name: 克隆 Lean Lede 源码
         run: git clone --depth=1 https://github.com/coolsnowwolf/lede.git lede
 
+      - name: 复制自定义.config配置文件
+        run: |
+          cp jdc/configs/jdcloud_re_cs02.config lede/.config
+          cp jdc/scripts/diy.sh lede/diy.sh 2>/dev/null || true
+
       - name: 更新并安装全部 feeds 软件源
         run: |
           cd lede
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: 删除lean全套插件、passwall、libselinux，保留完整LuCI feeds目录
+      - name: 删除lean全套插件、passwall、libselinux源码目录（根治pcre2报错）
         run: |
           cd lede
           rm -rf package/lean
-          rm -rf package/libs/libselinux
           rm -rf package/feeds/luci/luci-app-passwall
+          # 物理删除libselinux源码，彻底杜绝编译该包
+          rm -rf package/libs/libselinux
           ./scripts/feeds clean
 
       - name: 执行自定义diy脚本
@@ -43,21 +49,29 @@ jobs:
           cd lede
           [ -f diy.sh ] && chmod +x diy.sh && bash diy.sh || true
 
-      # 【核心修复】直接复制完整预配置，彻底跳过交互式defconfig（消除terminal报错）
-      - name: 直接写入完整自定义.config（内置平台+LuCI全套开关）
-        run: |
-          cp jdc/configs/jdcloud_re_cs02.config lede/.config
-          cp jdc/scripts/diy.sh lede/diy.sh 2>/dev/null || true
-
-      - name: 静默同步配置 oldconfig（无图形终端，纯后台执行）
-        run: |
-          cd lede
-          make oldconfig 2>&1 | tee -a build-full.log
-
       - name: 清理旧编译缓存，避免残留编译错误
         run: |
           cd lede
           rm -rf build_dir staging_dir
+
+      - name: 加载IPQ60xx平台底层配置，输出完整日志
+        run: |
+          cd lede
+          set +e
+          make -j1 target/linux/qualcommax/ipq60xx/defconfig 2>&1 | tee config-stage.log
+          ret=$?
+          cat config-stage.log >> build-full.log
+          if [ $ret -ne 0 ]; then
+            echo "【错误】平台defconfig执行失败，日志如下"
+            cat config-stage.log
+            exit $ret
+          fi
+          set -e
+
+      - name: 同步配置依赖 oldconfig
+        run: |
+          cd lede
+          make oldconfig 2>&1 | tee -a build-full.log
 
       - name: 预下载全部软件包源码
         run: |
@@ -73,7 +87,7 @@ jobs:
       - name: 打包编译日志（剔除dl源码文件夹，缩小压缩包）
         run: |
           cd lede
-          zip -r build-logs.zip build-full.log .config logs/ || true
+          zip -r build-logs.zip build-full.log .config logs/ config-stage.log || true
 
       # 分开上传：日志必传，固件仅存在文件才生成附件
       - name: 上传完整编译日志包
